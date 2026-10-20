@@ -1,0 +1,71 @@
+name: Build Velvet Piano APK
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Verify & Clean Project Folder Structure
+        run: |
+          mkdir -p app/src/main/java/com/velvet/piano
+          mkdir -p app/src/main/cpp
+          mkdir -p app/src/main/assets
+          mkdir -p app/src/main/res/xml
+
+          for f in $(find . -name "MainActivity.kt" -not -path "./app/src/main/java/com/velvet/piano/MainActivity.kt"); do
+            mv "$f" app/src/main/java/com/velvet/piano/MainActivity.kt
+          done
+          for f in $(find . -name "CMakeLists.txt" -not -path "./app/src/main/cpp/CMakeLists.txt"); do
+            mv "$f" app/src/main/cpp/CMakeLists.txt
+          done
+          for f in $(find . -name "native-lib.cpp" -not -path "./app/src/main/cpp/native-lib.cpp"); do
+            mv "$f" app/src/main/cpp/native-lib.cpp
+          done
+          for f in $(find . -name "AndroidManifest.xml" -not -path "./app/src/main/AndroidManifest.xml"); do
+            mv "$f" app/src/main/AndroidManifest.xml
+          done
+          for f in $(find . -name "file_paths.xml" -not -path "./app/src/main/res/xml/file_paths.xml"); do
+            mv "$f" app/src/main/res/xml/file_paths.xml
+          done
+
+      - name: Accept Android SDK Licenses & Install NDK
+        run: |
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
+          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --install "ndk;26.1.10909125" "cmake;3.22.1" "platforms;android-34" "build-tools;34.0.0"
+
+      - name: Fetch Studio SoundFont (.sf2) & TinySoundFont Header
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y fluid-soundfont-gm timgm6mb-soundfont curl
+          cp /usr/share/sounds/sf2/FluidR3_GM.sf2 app/src/main/assets/velvet_studio.sf2 || cp /usr/share/sounds/sf2/TimGM6mb.sf2 app/src/main/assets/velvet_studio.sf2
+          curl -f -L https://raw.githubusercontent.com/schellingb/TinySoundFont/master/tsf.h -o app/src/main/cpp/tsf.h
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.6'
+
+      - name: Compile Debug APK
+        run: |
+          gradle assembleDebug --no-daemon --console=plain
+
+      - name: Upload Velvet APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Velvet-Piano-APK
+          path: app/build/outputs/apk/debug/app-debug.apk
+          
